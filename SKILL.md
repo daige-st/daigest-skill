@@ -5,20 +5,19 @@ allowed-tools: Bash
 argument-hint: "[list | create | get <id> | sync <id>]"
 ---
 
-# Daigest API
+# Daigest — AI Source Monitoring API
 
-Daigest API를 통해 피드를 관리합니다. 모든 요청은 `curl`로 수행합니다.
+> Create feeds that monitor RSS, web pages, and more. AI summarizes what matters.
 
-## Setup
+Daigest watches your chosen sources and delivers AI-powered digests. This API lets you create feeds, manage sources, trigger AI sync, and read the results.
 
-API key는 환경변수 `DAIGEST_API_KEY`에서 읽습니다.
+## Authentication
 
-```bash
-# 키 확인
-echo $DAIGEST_API_KEY
+```
+Authorization: Bearer dk_live_xxxxxxxxxxxx
 ```
 
-키가 없으면 사용자에게 https://daige.st/account 에서 API key 발급을 안내하세요.
+API keys are issued at https://daige.st/account/api-keys
 
 ## Base URL
 
@@ -26,136 +25,174 @@ echo $DAIGEST_API_KEY
 https://daige.st/api/v1
 ```
 
-## Authentication
+## OpenAPI Spec
 
-모든 요청에 Bearer token 포함:
-
-```bash
--H "Authorization: Bearer $DAIGEST_API_KEY"
 ```
+GET https://daige.st/api/v1/openapi.json
+```
+
+Use this to auto-generate tools for your agent framework (GPTs, LangChain, CrewAI, Dify, n8n, etc.).
+
+## Quick Start
+
+### 1. Create a feed with sources
+
+```
+POST /feeds
+{
+  "name": "AI News Digest",
+  "memory": "Summarize the latest AI news. Highlight new model releases and benchmark results.",
+  "sources": [
+    { "type": "rss", "url": "https://example.com/ai-feed.xml" },
+    { "type": "url", "url": "https://example.com/blog" }
+  ]
+}
+→ 201 { "id": "feed-uuid", "name": "AI News Digest", ... }
+```
+
+### 2. Sync to generate content
+
+```
+POST /feeds/{id}/sync
+→ 200 { "content": "# AI News\n\n...", "has_changes": true, ... }
+```
+
+This triggers AI to fetch all sources and generate a digest. Synchronous — takes 30s to 5min depending on source count.
+
+### 3. Read the digest later
+
+```
+GET /feeds/{id}
+→ 200 { "content": "# AI News\n\n...", "has_changes": true, ... }
+```
+
+Use `?since=2026-02-09T00:00:00Z` to check if content changed. If nothing changed, returns `has_changes: false` with empty content to save tokens.
 
 ## Endpoints
 
 ### List feeds
 
-```bash
-curl -s https://daige.st/api/v1/feeds \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" | jq .
+```
+GET /feeds
+→ 200 { "feeds": [{ "id", "name", "source_count", "updated_at", ... }] }
 ```
 
-Returns: `{ feeds: [{ id, name, schedule_enabled, scheduled_times, updated_at, source_count }] }`
+### Create a feed
 
-### Get feed
-
-피드 상세 조회. content, memory, sources 포함.
-
-```bash
-curl -s "https://daige.st/api/v1/feeds/{id}" \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" | jq .
+```
+POST /feeds
+{
+  "name": "Feed Name",                          // required, max 200 chars
+  "memory": "Instructions for AI summarizer",   // optional, max 1500 chars
+  "schedule_enabled": true,                     // optional
+  "scheduled_times": [{ "time": "09:00", "days": ["mon", "fri"] }],  // optional
+  "sources": [{ "type": "rss", "url": "..." }] // optional
+}
+→ 201 { "id", "name", "schedule_enabled", "source_count", "created_at" }
 ```
 
-`since` 파라미터로 변경분만 조회 (토큰 절약):
+### Get feed details
 
-```bash
-curl -s "https://daige.st/api/v1/feeds/{id}?since=2026-02-07T00:00:00Z" \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" | jq .
+```
+GET /feeds/{id}
+GET /feeds/{id}?since=2026-02-09T00:00:00Z
+→ 200 {
+  "id", "name", "schedule_enabled", "scheduled_times",
+  "content",      // markdown, max 2000 chars. Empty when has_changes is false.
+  "memory",       // AI instructions, max 1500 chars
+  "has_changes",  // false if nothing changed since `since`
+  "updated_at",
+  "sources": [{ "id", "type", "name" }]
+}
 ```
 
-Returns: `{ id, name, schedule_enabled, scheduled_times, content, memory, has_changes, updated_at, sources: [{ id, type, name }] }`
+### Update a feed
 
-`has_changes: false`이면 `content`는 빈 문자열.
-
-### Create feed
-
-```bash
-curl -s -X POST https://daige.st/api/v1/feeds \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "피드 이름",
-    "memory": "AI 요약 지시사항",
-    "schedule_enabled": true,
-    "scheduled_times": [{ "time": "09:00", "days": ["mon","tue","wed","thu","fri"] }],
-    "sources": [
-      { "type": "rss", "url": "https://example.com/feed.xml" },
-      { "type": "url", "url": "https://example.com/page" }
-    ]
-  }' | jq .
+```
+PATCH /feeds/{id}
+{
+  "name": "New Name",                           // optional
+  "content": "# Updated content",               // optional, max 2000 chars
+  "memory": "New AI instructions",              // optional, max 1500 chars
+  "schedule_enabled": true,                     // optional
+  "scheduled_times": [{ "time": "10:00" }],     // optional
+  "add_sources": [{ "type": "rss", "url": "..." }],   // optional, max 20
+  "remove_source_ids": ["source-uuid"],                // optional, max 20
+  "create_version": true                        // optional, default false
+}
+→ 200 { "id", "name", "content", "memory", "sources", "updated_at", ... }
 ```
 
-- API로 추가 가능한 소스: `rss`, `url`만
-- OAuth 기반 소스(Slack, Notion, GitHub, Discord 등)는 https://daige.st 웹에서 연결 필요
-- `scheduled_times`의 `days` 생략 시 매일 실행
+- `create_version: true` saves a snapshot before overwriting. Use when you want to preserve history.
+- `remove_source_ids`: Get IDs from `GET /feeds/{id}` response `sources[].id`.
 
-### Update feed
+### Delete a feed
 
-변경할 필드만 전송:
-
-```bash
-curl -s -X PATCH "https://daige.st/api/v1/feeds/{id}" \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "새 이름",
-    "content": "# 수정된 내용\n\n...",
-    "memory": "새로운 AI 지시사항",
-    "schedule_enabled": true,
-    "scheduled_times": [{ "time": "10:00", "days": ["mon"] }],
-    "add_sources": [{ "type": "rss", "url": "https://new-feed.com/rss" }],
-    "remove_source_ids": ["source-uuid"]
-  }' | jq .
+```
+DELETE /feeds/{id}
+→ 200 { "deleted": true }
 ```
 
-- `remove_source_ids`: GET /feeds/{id}의 `sources[].id` 참조
-- `content` 변경 시 버전 자동 생성
+### Sync a feed
 
-### Delete feed
-
-```bash
-curl -s -X DELETE "https://daige.st/api/v1/feeds/{id}" \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" | jq .
+```
+POST /feeds/{id}/sync
+→ 200 { "id", "name", "content", "has_changes": true, "sources", ... }
 ```
 
-### Sync feed
+Fetches latest data from all sources, then AI generates/updates the digest. Synchronous — waits until completion. Consumes AI quota.
 
-소스에서 최신 데이터를 가져와 AI가 다이제스트 갱신. 동기 처리 (30초~2분, 최대 5분).
+## Source Types
 
-```bash
-curl -s -X POST "https://daige.st/api/v1/feeds/{id}/sync" \
-  -H "Authorization: Bearer $DAIGEST_API_KEY" \
-  --max-time 300 | jq .
-```
+| Type | Via API | Notes |
+|------|---------|-------|
+| `rss` | Yes | RSS/Atom feed URL |
+| `url` | Yes | Any web page URL |
+| `slack` | No | Requires OAuth in web app |
+| `notion` | No | Requires OAuth in web app |
+| `github` | No | Requires OAuth in web app |
+| `discord` | No | Pro plan, OAuth in web app |
+| `youtube` | No | Pro plan, configured in web app |
+| `x` | No | Pro plan, configured in web app |
+| `reddit` | No | Pro plan, configured in web app |
+| `substack` | No | Pro plan, configured in web app |
+| `threads` | No | Pro plan, configured in web app |
 
-AI quota를 소모합니다. quota 초과 시 429 에러.
+To use OAuth or premium sources, set them up in the web app first. The API can then read and sync feeds that include these sources.
 
 ## Rate Limits
 
-- 일반: 60 req/min
-- Sync: 10 req/min
-- 초과 시 429 + `Retry-After` 헤더
+| Scope | Limit |
+|-------|-------|
+| General | 60 requests/min per API key |
+| Sync | 10 requests/min per API key |
 
-## Field Limits
+Exceeding limits returns `429` with `Retry-After` header (seconds).
 
-| Field | Max |
-|-------|-----|
-| name | 200자 |
-| content | 2,000자 |
-| memory | 1,500자 |
+## Error Responses
 
-## Error Handling
+```json
+{ "error": "description", "code": "ERROR_CODE" }
+```
 
-에러 응답 형식: `{ "error": "message", "code": "ERROR_CODE" }`
+| Status | Meaning |
+|--------|---------|
+| 400 | Validation error (bad input) |
+| 401 | Missing or invalid API key |
+| 404 | Feed not found |
+| 429 | Rate limit exceeded |
 
-- `401`: API key 누락/무효
-- `404`: 피드 없음
-- `429`: Rate limit 초과 → `Retry-After` 헤더 확인 후 재시도
+## Tips
 
-## Arguments
+- **Memory is powerful.** Use it to control AI behavior per feed: language, focus areas, output format, what to highlight or ignore.
+- **Use `since` to poll efficiently.** Pass the last `updated_at` value. If `has_changes` is false, skip processing.
+- **Sync costs quota.** Each sync consumes an AI request from the user's plan. Don't over-sync.
+- **Combine RSS + URL sources** for comprehensive monitoring. RSS for regular updates, URL for specific pages.
+- **Schedule vs manual sync.** Set `schedule_enabled: true` with `scheduled_times` for automatic updates, or call `/sync` manually when needed.
 
-`$ARGUMENTS`가 제공되면 해당 작업을 바로 수행합니다:
+## Links
 
-- `list` → 피드 목록 조회
-- `create` → 사용자에게 이름, 소스 등을 물어본 후 생성
-- `get <id>` → 특정 피드 조회
-- `sync <id>` → 특정 피드 동기화
-- 없으면 → 피드 목록부터 조회하여 상황 파악
+- Website: https://daige.st
+- OpenAPI spec: https://daige.st/api/v1/openapi.json
+- API keys: https://daige.st/account/api-keys
+- Support: help@daige.st
