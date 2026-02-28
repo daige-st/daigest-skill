@@ -235,7 +235,7 @@ GET /feeds/{id}/posts?cursor=42&limit=5
     "version_number": 42,
     "name": "My Feed",
     "content": "# Summary...",
-    "references": [{ "id": 1, "source_type": "rss", "source_id": "...", "title": "..." }],
+    "references": [{ "id": 1, "title": "Article Title", "url": "https://example.com/article" }],
     "created_at": "2026-02-08T09:00:00Z"
   }],
   "next_cursor": 38,
