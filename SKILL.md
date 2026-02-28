@@ -282,11 +282,11 @@ These sources require setup in the [Daigest web app](https://daige.st) first, th
 | `notion` | OAuth |
 | `github` | OAuth |
 | `discord` | OAuth (Pro plan) |
-| `youtube` | Web app (Pro plan) |
+| `youtube` | Web app (channel/trending free, search Pro plan) |
 | `x` | Web app (Pro plan) |
-| `reddit` | Web app (Pro plan) |
-| `substack` | Web app (Pro plan) |
-| `threads` | Web app (Pro plan) |
+| `reddit` | Web app |
+| `substack` | Web app |
+| `threads` | Web app |
 
 ## Best Practices
 
